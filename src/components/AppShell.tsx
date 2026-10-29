@@ -1,7 +1,7 @@
 import { Link } from "@/components/link";
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { Accessibility, BarChart3, Map, BookOpenText, Boxes, ChevronDown, CircleUserRound, Download, Gamepad2, GraduationCap, Languages, LayoutDashboard, Menu, MessageCircle, Palette, Settings, Sparkles, Wifi, WifiOff, X } from "lucide-react";
+import { Accessibility, BarChart3, Map, BookOpenText, Boxes, ChevronDown, CircleUserRound, Download, Gamepad2, GraduationCap, LayoutDashboard, Menu, MessageCircle, Palette, Settings, Sparkles, Wifi, WifiOff, X } from "lucide-react";
 import { languages, targetLanguageIds, type LanguageId } from "@/lib/content";
 import { useLearner } from "@/lib/store";
 import { HelpDrawer } from "./LanguageLens";
@@ -71,6 +71,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="theme-caption">{language.environment}</span>
         </div>
         <div className="topbar-actions"><ThemeSwitch /><SoundToggle />
+          <div className="topbar-stats" aria-label="Learner stats">
+            <span className="stat-xp" title="Total XP">⚡ {state.progress[state.target].xp} XP</span>
+            <span className="stat-streak" title="Daily streak">🔥 {state.progress[state.target].currentStreak || 0}</span>
+          </div>
           <span className={`connectivity ${online ? "online" : "offline"}`} title={online ? "Online" : "Offline — local activities remain available"}>{online ? <Wifi size={15} /> : <WifiOff size={15} />}<span>{online ? "Online" : "Offline"}</span></span>
           <Link className="icon-button" href="/app/access" aria-label="Open Access Studio" title="Access Studio"><Accessibility size={18} /></Link>
           <SignedIn><span className="account-slot"><UserButton /></span></SignedIn><SignedOut><Link className="soft-button account-link" href="/login">Sign in</Link></SignedOut><Link className="profile-pill" href="/app/dashboard"><CircleUserRound size={18} /><span>{state.name}</span></Link>
@@ -87,6 +91,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-progress">
           <div className="xp-ring"><span>{state.progress[state.target].xp}</span><small>XP</small></div>
+          <div className="streak-indicator" title="Keep learning daily to grow your streak!">
+            <span className="streak-flame">🔥</span>
+            <strong>{state.progress[state.target].currentStreak || 0}</strong>
+            <small>streak</small>
+          </div>
           <div><strong>Gentle momentum</strong><span>{state.progress[state.target].completedLessons.length} lessons explored</span></div>
         </div>
       </aside>

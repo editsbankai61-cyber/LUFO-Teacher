@@ -1,184 +1,925 @@
 import { Link } from "@/components/link";
-import { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronLeft, ChevronRight, CirclePause, CirclePlay, Heart, Lightbulb, RotateCcw, Shield, Sparkles, Volume2, X } from "lucide-react";
-import { gameDefinitions, getQuestion, languages, segmentGraphemes } from "@/lib/content";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  Heart,
+  RotateCcw,
+  Sparkles,
+  Trophy,
+  Volume2,
+} from "lucide-react";
+import { concepts, languages, type LanguageId } from "@/lib/content";
 import { useLearner } from "@/lib/store";
 import { playSound } from "@/lib/sound";
+import { speakText } from "@/lib/audio";
 import { ScriptText } from "./LanguageLens";
+
+export type GameDefinition = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  mechanic: string;
+  icon: string;
+  instructions: string;
+};
+
+export const gameModes: GameDefinition[] = [
+  {
+    id: "word-match",
+    name: "Word Match",
+    category: "Vocabulary",
+    description: "Connect Indian words to their matching English meanings.",
+    mechanic: "Pair tiles between the two columns.",
+    icon: "🔤",
+    instructions: "Tap an Indian script tile on the left, then tap its matching English translation on the right.",
+  },
+  {
+    id: "memory-match",
+    name: "Memory Match",
+    category: "Memory",
+    description: "Flip cards and find pairs of words and meanings.",
+    mechanic: "Concentration memory grid.",
+    icon: "🃏",
+    instructions: "Flip two cards at a time to find matching words. Remember card locations!",
+  },
+  {
+    id: "sentence-builder",
+    name: "Sentence Builder",
+    category: "Grammar",
+    description: "Assemble word tiles into grammatically correct sentences.",
+    mechanic: "Ordered tile assembly.",
+    icon: "🧱",
+    instructions: "Click word chips in the correct sequence to reconstruct the native-script sentence.",
+  },
+  {
+    id: "listening-challenge",
+    name: "Listening Challenge",
+    category: "Audio",
+    description: "Listen to native pronunciation and identify the spoken phrase.",
+    mechanic: "Audio comprehension.",
+    icon: "🎧",
+    instructions: "Press the speaker button to hear the phrase, then select the matching written card.",
+  },
+  {
+    id: "quick-quiz",
+    name: "Quick Quiz",
+    category: "Knowledge",
+    description: "Answer rapid-fire questions with immediate educational feedback.",
+    mechanic: "Multiple choice.",
+    icon: "⚡",
+    instructions: "Choose the correct translation from four choices before moving to the next round.",
+  },
+  {
+    id: "speed-challenge",
+    name: "Speed Challenge",
+    category: "Timed",
+    description: "Race against a real countdown clock to test recall speed.",
+    mechanic: "Timer countdown.",
+    icon: "⏱️",
+    instructions: "Answer as many words as you can in 30 seconds. Correct answers earn bonus time!",
+  },
+  {
+    id: "picture-vocabulary",
+    name: "Picture Vocabulary",
+    category: "Visual",
+    description: "Identify everyday objects, foods, and actions from visual cues.",
+    mechanic: "Visual identification.",
+    icon: "🖼️",
+    instructions: "Observe the illustrated prompt and select the corresponding native-language word.",
+  },
+  {
+    id: "daily-challenge",
+    name: "Daily Challenge",
+    category: "Quest",
+    description: "A rotating challenge combining multiple skills for bonus XP.",
+    mechanic: "Multi-skill test.",
+    icon: "🌟",
+    instructions: "Complete all 5 questions in today's featured rotation to claim your daily bonus.",
+  },
+];
 
 export function GamesHub() {
   const { state } = useLearner();
-  const language = languages[state.target];
-  return <div className="screen-stack">
-    <ScreenHeading eyebrow="13 ways to practice" title="Play with meaning" description={`Every game now draws from ${language.name} content. Timers are off by default, sound is optional, and every movement mechanic has a named-control path.`} />
-    <div className="game-grid">
-      {gameDefinitions.map((game, index) => <Link href={`/app/games/${game.id}`} className="game-card glass-card" key={game.id}>
-        <div className={`game-art game-art-${index + 1}`} aria-hidden="true"><span>{String(index + 1).padStart(2, "0")}</span><i /><b /></div>
-        <div className="game-copy"><span className="eyebrow">{index < 3 ? "Good first pick" : "Practice deck"}</span><h2>{game.name}</h2><p>{game.mechanic}</p><span className="access-note">Accessible route: {game.alternative}</span></div>
-      </Link>)}
+  const profile = languages[state.target];
+  const progress = state.progress[state.target];
+
+  return (
+    <div className="screen-stack">
+      <header className="screen-heading">
+        <div>
+          <span className="eyebrow">{profile.native} · Educational Playground</span>
+          <h1>Language Games</h1>
+          <p>
+            Reinforce vocabulary, listening, and sentence construction through 8 educational game modes tailored for {profile.name}.
+          </p>
+        </div>
+        <div className="screen-actions">
+          <div className="streak-badge glass-card">
+            <span>🔥</span>
+            <b>{progress.currentStreak || 0} Day Streak</b>
+          </div>
+          <div className="xp-pill glass-card">
+            <Sparkles size={16} />
+            <b>{progress.xp} XP</b>
+          </div>
+        </div>
+      </header>
+
+      <div className="game-grid">
+        {gameModes.map((game) => {
+          const isCompleted = progress.completedGames.includes(game.id);
+          return (
+            <Link
+              href={`/app/games/${game.id}`}
+              className={`game-card glass-card ${isCompleted ? "game-cleared" : ""}`}
+              key={game.id}
+            >
+              <div className="game-art-badge">
+                <span className="game-icon-glyph">{game.icon}</span>
+                {isCompleted && <CheckCircle2 size={18} className="game-cleared-icon" />}
+              </div>
+              <div className="game-copy">
+                <span className="eyebrow">{game.category}</span>
+                <h2>{game.name}</h2>
+                <p>{game.description}</p>
+                <span className="access-note">Instructions: {game.instructions}</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
     </div>
-  </div>;
+  );
 }
 
 export function GamePlayer({ gameId }: { gameId: string }) {
-  const definition = gameDefinitions.find((item) => item.id === gameId) ?? gameDefinitions[0];
-  const { state, updateProgress } = useLearner();
+  const definition = gameModes.find((item) => item.id === gameId) ?? gameModes[0];
+  const { state, recordActivity } = useLearner();
+  const profile = languages[state.target];
+
+  // Game state
+  const [started, setStarted] = useState(false);
   const [round, setRound] = useState(0);
   const [score, setScore] = useState(0);
   const [hearts, setHearts] = useState(3);
-  const [paused, setPaused] = useState(false);
-  const [feedback, setFeedback] = useState("Practice round: explore the controls. It does not affect mastery.");
-  const [answered, setAnswered] = useState(false);
-  const [hint, setHint] = useState(false);
-  const question = getQuestion(state.target, round);
-  const language = languages[state.target];
+  const [gameOver, setGameOver] = useState(false);
+  const [earnedXp, setEarnedXp] = useState(0);
 
-  const choose = (value: string, assisted = hint) => {
-    if (paused || answered) return;
-    const correct = value === question.answer;
-    playSound(correct ? "success" : "miss");
-    setAnswered(true);
-    setFeedback(correct ? `${question.answer} matches “${question.concept.values.en}”. ${assisted ? "You used a hint; this is logged as assisted practice." : "Independent recall recorded."}` : `${value} does not fit this prompt. ${question.answer} is the contextual match. ${question.concept.usage}`);
-    if (correct) setScore((current) => current + (assisted ? 6 : 10));
-    else setHearts((current) => Math.max(1, current - 1));
-    if (round > 0) updateProgress(state.target, (progress) => ({
-      ...progress,
-      xp: progress.xp + (correct ? (assisted ? 3 : 5) : 1),
-      assistedAnswers: progress.assistedAnswers + (assisted ? 1 : 0),
-      independentAnswers: progress.independentAnswers + (correct && !assisted ? 1 : 0),
-    }));
+  const startGame = () => {
+    setStarted(true);
+    setRound(0);
+    setScore(0);
+    setHearts(3);
+    setGameOver(false);
   };
 
-  const next = () => {
-    const nextRound = round + 1;
-    setRound(nextRound);
-    setAnswered(false);
-    setHint(false);
-    setFeedback(nextRound === 1 ? "Practice complete. This round contributes to your review history." : "New round ready.");
-    if (nextRound >= 4) updateProgress(state.target, (progress) => ({ ...progress, completedGames: progress.completedGames.includes(definition.id) ? progress.completedGames : [...progress.completedGames, definition.id] }));
+  const handleFinish = async (finalScore: number, accuracy: number) => {
+    setGameOver(true);
+    const res = await recordActivity({
+      languageId: state.target,
+      activityType: "game",
+      activityId: definition.id,
+      score: finalScore,
+      accuracy,
+      completedGameId: definition.id,
+    });
+    setEarnedXp(res.xpAwarded);
   };
 
-  const reset = () => { setRound(0); setScore(0); setHearts(3); setAnswered(false); setHint(false); setFeedback("Practice round restarted."); };
+  if (!started) {
+    return (
+      <div className="narrow-screen">
+        <section className="glass-card game-intro-card">
+          <Link href="/app/games" className="soft-button back-btn">
+            <ChevronLeft size={16} /> All Games
+          </Link>
+          <div className="game-intro-icon">{definition.icon}</div>
+          <span className="eyebrow">{definition.category} Challenge · {profile.name}</span>
+          <h1>{definition.name}</h1>
+          <p className="game-intro-desc">{definition.description}</p>
 
-  return <div className="game-page">
-    <div className="game-topline">
-      <Link href="/app/games" className="soft-button"><ChevronLeft size={17} />All games</Link>
-      <div className="game-stats"><span><Sparkles size={16} />{score} XP</span><span><Heart size={16} />{hearts} forgiving hearts</span><span>Round {Math.min(round + 1, 5)}/5</span></div>
-      <button className="soft-button" onClick={() => setPaused((value) => !value)}>{paused ? <CirclePlay size={17} /> : <CirclePause size={17} />}{paused ? "Resume" : "Pause"}</button>
+          <div className="instructions-box glass-card">
+            <strong>How to Play:</strong>
+            <p>{definition.instructions}</p>
+            <div className="instruction-perks">
+              <span>❤️ 3 Forgiving Hearts</span>
+              <span>⭐ Up to 25 XP</span>
+              <span>🎧 Native Audio Support</span>
+            </div>
+          </div>
+
+          <button className="primary-button start-game-btn" onClick={startGame}>
+            Start Game <ArrowRight size={18} />
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  if (gameOver) {
+    return (
+      <div className="narrow-screen">
+        <section className="glass-card completion-card">
+          <div className="trophy-ring">
+            <Trophy size={48} className="trophy-icon" />
+          </div>
+          <span className="eyebrow">Game Complete!</span>
+          <h2>{definition.name} Finished</h2>
+          <p>Great practice session in {profile.name}!</p>
+
+          <div className="completion-stats-grid">
+            <div className="stat-box">
+              <Sparkles size={20} className="stat-icon" />
+              <strong>+{earnedXp}</strong>
+              <small>XP Awarded</small>
+            </div>
+            <div className="stat-box">
+              <Trophy size={20} className="stat-icon" />
+              <strong>{score}</strong>
+              <small>Points Scored</small>
+            </div>
+            <div className="stat-box">
+              <Heart size={20} className="stat-icon" />
+              <strong>{hearts}/3</strong>
+              <small>Hearts Left</small>
+            </div>
+          </div>
+
+          <div className="completion-actions">
+            <button className="primary-button" onClick={startGame}>
+              Play Again <RotateCcw size={16} />
+            </button>
+            <Link className="soft-button" href="/app/games">
+              Explore More Games
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="game-play-shell">
+      <header className="game-play-header">
+        <Link href="/app/games" className="icon-button" aria-label="Exit game">
+          <ChevronLeft size={20} />
+        </Link>
+        <div className="game-title-info">
+          <h2>{definition.name}</h2>
+          <span>Round {round + 1}/5</span>
+        </div>
+        <div className="game-meta-pills">
+          <span className="score-pill">
+            <Sparkles size={14} /> {score} pts
+          </span>
+          <span className="hearts-pill">
+            <Heart size={14} className="heart-active" /> {hearts}
+          </span>
+        </div>
+      </header>
+
+      <main className="game-play-body glass-card">
+        {definition.id === "word-match" && (
+          <WordMatchEngine
+            languageId={state.target}
+            onCompleteRound={(pts) => {
+              const newScore = score + pts;
+              setScore(newScore);
+              if (round < 4) setRound((r) => r + 1);
+              else handleFinish(newScore, hearts / 3);
+            }}
+            onMistake={() => setHearts((h) => Math.max(1, h - 1))}
+          />
+        )}
+
+        {definition.id === "memory-match" && (
+          <MemoryMatchEngine
+            languageId={state.target}
+            onCompleteRound={(pts) => {
+              const newScore = score + pts;
+              setScore(newScore);
+              if (round < 2) setRound((r) => r + 1);
+              else handleFinish(newScore, hearts / 3);
+            }}
+            onMistake={() => setHearts((h) => Math.max(1, h - 1))}
+          />
+        )}
+
+        {definition.id === "sentence-builder" && (
+          <SentenceBuilderEngine
+            languageId={state.target}
+            round={round}
+            onCompleteRound={(pts, correct) => {
+              if (correct) {
+                const newScore = score + pts;
+                setScore(newScore);
+                if (round < 4) setRound((r) => r + 1);
+                else handleFinish(newScore, hearts / 3);
+              } else {
+                setHearts((h) => Math.max(1, h - 1));
+              }
+            }}
+          />
+        )}
+
+        {definition.id === "listening-challenge" && (
+          <ListeningChallengeEngine
+            languageId={state.target}
+            round={round}
+            onCompleteRound={(pts, correct) => {
+              if (correct) {
+                const newScore = score + pts;
+                setScore(newScore);
+                if (round < 4) setRound((r) => r + 1);
+                else handleFinish(newScore, hearts / 3);
+              } else {
+                setHearts((h) => Math.max(1, h - 1));
+              }
+            }}
+          />
+        )}
+
+        {definition.id === "speed-challenge" && (
+          <SpeedChallengeEngine
+            languageId={state.target}
+            onFinish={(finalScore, accuracy) => handleFinish(finalScore, accuracy)}
+          />
+        )}
+
+        {(definition.id === "quick-quiz" ||
+          definition.id === "daily-challenge" ||
+          definition.id === "picture-vocabulary") && (
+          <QuizChallengeEngine
+            gameId={definition.id}
+            languageId={state.target}
+            round={round}
+            onCompleteRound={(pts, correct) => {
+              if (correct) {
+                const newScore = score + pts;
+                setScore(newScore);
+                if (round < 4) setRound((r) => r + 1);
+                else handleFinish(newScore, hearts / 3);
+              } else {
+                setHearts((h) => Math.max(1, h - 1));
+              }
+            }}
+          />
+        )}
+      </main>
     </div>
-    <header className="game-heading"><span className="eyebrow">{round === 0 ? "Practice round" : `Learning round ${round}`}</span><h1>{definition.name}</h1><p>{definition.mechanic}</p><span className="access-note">{definition.alternative} Sound and precise gestures are not required.</span></header>
-    <div className={`game-stage game-${definition.id} ${paused ? "paused" : ""}`}>
-      {paused ? <div className="pause-state"><CirclePause size={44} /><h2>Game paused</h2><p>Your round is safe. Resume whenever your energy allows.</p><button className="primary-button" onClick={() => setPaused(false)}>Resume gently</button></div> : <>
-        <div className="question-banner"><span>Find this meaning</span><strong>{question.concept.values.en}</strong>{hint && <div className="hint-text">Hint: transliteration is <b>{question.concept.transliteration[state.target]}</b></div>}</div>
-        <Mechanic id={definition.id} choices={question.choices} answer={question.answer} language={state.target} disabled={answered} onChoose={choose} round={round} />
-      </>}
-    </div>
-    <div className={`feedback-panel ${answered ? (feedback.includes("does not fit") ? "incorrect" : "correct") : "neutral"}`} role="status" aria-live="polite">
-      <div className="feedback-icon">{answered ? (feedback.includes("does not fit") ? <X /> : <Check />) : <Sparkles />}</div>
-      <div><strong>{answered ? (feedback.includes("does not fit") ? "Useful clue" : "Connection made") : "LUFO’s note"}</strong><p>{feedback}</p></div>
-      <div className="row-actions">
-        {!answered && <button className="soft-button" onClick={() => setHint(true)}><Lightbulb size={17} />Show hint</button>}
-        {answered && round < 4 && <button className="primary-button" onClick={next}>Next round<ArrowRight size={17} /></button>}
-        {answered && round >= 4 && <Link className="primary-button" href="/app/dashboard">See progress<ArrowRight size={17} /></Link>}
-        <button className="icon-button" onClick={reset} aria-label="Restart game" title="Restart"><RotateCcw size={17} /></button>
+  );
+}
+
+// ----------------------------------------------------
+// 1. WORD MATCH ENGINE
+// ----------------------------------------------------
+function WordMatchEngine({
+  languageId,
+  onCompleteRound,
+  onMistake,
+}: {
+  languageId: LanguageId;
+  onCompleteRound: (points: number) => void;
+  onMistake: () => void;
+}) {
+  const currentItems = useMemo(() => {
+    // Pick 4 concepts
+    return [...concepts].sort(() => 0.5 - Math.random()).slice(0, 4);
+  }, []);
+
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [selectedEnglish, setSelectedEnglish] = useState<string | null>(null);
+  const [matchedIds, setMatchedIds] = useState<string[]>([]);
+  const [wrongPair, setWrongPair] = useState(false);
+
+  const englishShuffled = useMemo(() => {
+    return [...currentItems].sort(() => 0.5 - Math.random());
+  }, [currentItems]);
+
+  const handleTargetClick = (id: string) => {
+    if (matchedIds.includes(id)) return;
+    setSelectedTarget(id);
+    if (selectedEnglish) {
+      evaluateMatch(id, selectedEnglish);
+    }
+  };
+
+  const handleEnglishClick = (id: string) => {
+    if (matchedIds.includes(id)) return;
+    setSelectedEnglish(id);
+    if (selectedTarget) {
+      evaluateMatch(selectedTarget, id);
+    }
+  };
+
+  const evaluateMatch = (targetId: string, englishId: string) => {
+    if (targetId === englishId) {
+      playSound("success");
+      const nextMatched = [...matchedIds, targetId];
+      setMatchedIds(nextMatched);
+      setSelectedTarget(null);
+      setSelectedEnglish(null);
+
+      if (nextMatched.length === currentItems.length) {
+        window.setTimeout(() => onCompleteRound(20), 400);
+      }
+    } else {
+      playSound("miss");
+      onMistake();
+      setWrongPair(true);
+      window.setTimeout(() => {
+        setWrongPair(false);
+        setSelectedTarget(null);
+        setSelectedEnglish(null);
+      }, 600);
+    }
+  };
+
+  return (
+    <div className="match-engine-container">
+      <p className="match-instruction">Pair the words with their English meanings:</p>
+      <div className="match-columns-grid">
+        <div className="match-column">
+          {currentItems.map((item) => {
+            const isMatched = matchedIds.includes(item.id);
+            const isSelected = selectedTarget === item.id;
+            return (
+              <button
+                key={item.id}
+                disabled={isMatched}
+                className={`match-card target-card ${isMatched ? "matched" : ""} ${isSelected ? "selected" : ""} ${wrongPair && isSelected ? "shake" : ""}`}
+                onClick={() => handleTargetClick(item.id)}
+              >
+                <ScriptText language={languageId}>{item.values[languageId]}</ScriptText>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="match-column">
+          {englishShuffled.map((item) => {
+            const isMatched = matchedIds.includes(item.id);
+            const isSelected = selectedEnglish === item.id;
+            return (
+              <button
+                key={item.id}
+                disabled={isMatched}
+                className={`match-card english-card ${isMatched ? "matched" : ""} ${isSelected ? "selected" : ""} ${wrongPair && isSelected ? "shake" : ""}`}
+                onClick={() => handleEnglishClick(item.id)}
+              >
+                <span>{item.values.en}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
-    <p className="assessment-note">This activity records vocabulary recognition. Hints are welcome and logged as assisted practice, not independent recall. No access or XP is removed for using help.</p>
-  </div>;
+  );
 }
 
-function Mechanic({ id, choices, answer, language, disabled, onChoose, round }: { id: string; choices: string[]; answer: string; language: keyof typeof languages; disabled: boolean; onChoose: (value: string) => void; round: number }) {
-  switch (id) {
-    case "word-snake": return <Snake choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "bubble-shooter": return <Bubbles choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "kite-battle": return <Kite choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "word-slash": return <Slash choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "whack-a-word": return <Whack choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "word-rain": return <Rain choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "flappy-gate": return <Gates choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "memory-match": return <Memory choices={choices} answer={answer} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "lane-runner": return <Lanes choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "rhythm-tap": return <Rhythm answer={answer} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "kabaddi-raid": return <Raid choices={choices} language={language} disabled={disabled} onChoose={onChoose} />;
-    case "word-builder": return <Builder answer={answer} language={language} disabled={disabled} onChoose={onChoose} round={round} />;
-    default: return <Boss choices={choices} language={language} disabled={disabled} onChoose={onChoose} round={round} />;
-  }
-}
+// ----------------------------------------------------
+// 2. MEMORY MATCH ENGINE
+// ----------------------------------------------------
+type MemoryCard = {
+  uid: string;
+  conceptId: string;
+  text: string;
+  isNative: boolean;
+};
 
-type ChoiceProps = { choices: string[]; language: keyof typeof languages; disabled: boolean; onChoose: (value: string) => void };
-const Word = ({ value, language }: { value: string; language: keyof typeof languages }) => <ScriptText language={language}>{value}</ScriptText>;
+function MemoryMatchEngine({
+  languageId,
+  onCompleteRound,
+  onMistake,
+}: {
+  languageId: LanguageId;
+  onCompleteRound: (points: number) => void;
+  onMistake: () => void;
+}) {
+  const cards: MemoryCard[] = useMemo(() => {
+    const selected = [...concepts].sort(() => 0.5 - Math.random()).slice(0, 4);
+    const list: MemoryCard[] = [];
+    selected.forEach((c) => {
+      list.push({ uid: `${c.id}-target`, conceptId: c.id, text: c.values[languageId], isNative: true });
+      list.push({ uid: `${c.id}-en`, conceptId: c.id, text: c.values.en, isNative: false });
+    });
+    return list.sort(() => 0.5 - Math.random());
+  }, [languageId]);
 
-function Snake({ choices, language, disabled, onChoose }: ChoiceProps) {
-  const [cell, setCell] = useState(0);
-  const move = (delta: number) => setCell((current) => Math.max(0, Math.min(3, current + delta)));
-  return <div className="snake-layout"><div className="snake-board" role="grid" aria-label="Four-cell turn-based snake route">{choices.map((choice, index) => <div role="gridcell" key={choice} className={cell === index ? "current" : ""}><span>{index === cell ? "LUFO →" : `${index + 1}`}</span><Word value={choice} language={language} /></div>)}</div><div className="direction-pad" aria-label="Step-by-step directional controls"><button onClick={() => move(-2)} aria-label="Move up"><ArrowUp /></button><button onClick={() => move(-1)} aria-label="Move left"><ArrowLeft /></button><button onClick={() => move(1)} aria-label="Move right"><ArrowRight /></button><button onClick={() => move(2)} aria-label="Move down"><ArrowDown /></button><button className="eat" disabled={disabled} onClick={() => onChoose(choices[cell])}>Eat word {cell + 1}</button></div></div>;
-}
+  const [flippedUids, setFlippedUids] = useState<string[]>([]);
+  const [matchedIds, setMatchedIds] = useState<string[]>([]);
 
-function Bubbles({ choices, language, disabled, onChoose }: ChoiceProps) {
-  return <div className="bubble-field" aria-label="Numbered word bubbles">{choices.map((choice, index) => <button disabled={disabled} onClick={() => onChoose(choice)} key={choice} className={`bubble bubble-${index + 1}`} aria-label={`Bubble ${index + 1}: ${choice}`}><small>{index + 1}</small><Word value={choice} language={language} /></button>)}</div>;
-}
+  const handleCardClick = (card: MemoryCard) => {
+    if (flippedUids.includes(card.uid) || matchedIds.includes(card.conceptId) || flippedUids.length >= 2) {
+      return;
+    }
 
-function Kite({ choices, language, disabled, onChoose }: ChoiceProps) {
-  const [move, setMove] = useState("Hold");
-  return <div className="kite-field"><div className="kite-visual" aria-hidden="true"><div className="kite-shape" /><div className="kite-line" /></div><fieldset className="strategy-choices"><legend>1. Choose an untimed kite move</legend>{["Climb", "Hold", "Sweep"].map((item) => <button key={item} className={move === item ? "selected" : ""} onClick={() => setMove(item)}>{item}</button>)}</fieldset><div className="choice-row" aria-label={`2. Answer, then ${move.toLowerCase()}`}>{choices.map((choice) => <button disabled={disabled} onClick={() => onChoose(choice)} key={choice}><Word value={choice} language={language} /></button>)}</div></div>;
-}
+    const nextFlipped = [...flippedUids, card.uid];
+    setFlippedUids(nextFlipped);
 
-function Slash({ choices, language, disabled, onChoose }: ChoiceProps) {
-  return <div className="slash-field"><div className="slash-trail" aria-hidden="true" />{choices.map((choice, index) => <button disabled={disabled} onClick={() => onChoose(choice)} key={choice} className={`slash-word at-${index + 1}`} aria-label={`Slash word ${choice}`}><Word value={choice} language={language} /><span>select to slash</span></button>)}</div>;
-}
+    if (nextFlipped.length === 2) {
+      const cardA = cards.find((c) => c.uid === nextFlipped[0])!;
+      const cardB = cards.find((c) => c.uid === nextFlipped[1])!;
 
-function Whack({ choices, language, disabled, onChoose }: ChoiceProps) {
-  return <div className="whack-grid" role="group" aria-label="Stable untimed word grid">{[...choices, ...choices.slice(0, 2)].map((choice, index) => <button disabled={disabled} onClick={() => onChoose(choice)} key={`${choice}-${index}`}><span className="mole" aria-hidden="true" /><Word value={choice} language={language} /></button>)}</div>;
-}
-
-function Rain({ choices, language, disabled, onChoose }: ChoiceProps) {
-  const [index, setIndex] = useState(0);
-  return <div className="rain-field"><div className="rain-drop"><span>Queued card {index + 1} of {choices.length}</span><Word value={choices[index]} language={language} /></div><div className="queue-controls"><button onClick={() => setIndex((index - 1 + choices.length) % choices.length)} aria-label="Previous queued word"><ChevronLeft /></button><button className="primary-button" disabled={disabled} onClick={() => onChoose(choices[index])}>Catch this word</button><button onClick={() => setIndex((index + 1) % choices.length)} aria-label="Next queued word"><ChevronRight /></button></div></div>;
-}
-
-function Gates({ choices, language, disabled, onChoose }: ChoiceProps) {
-  return <div className="gate-field"><div className="traveler" aria-hidden="true">LUFO</div>{choices.map((choice, index) => <button disabled={disabled} onClick={() => onChoose(choice)} key={choice} className="answer-gate"><span>Gate {index + 1}</span><Word value={choice} language={language} /><small>Step through</small></button>)}</div>;
-}
-
-function Memory({ choices, answer, language, disabled, onChoose }: ChoiceProps & { answer: string }) {
-  const [open, setOpen] = useState<number[]>([]);
-  const cards = useMemo(() => [answer, "Matching meaning", ...choices.filter((item) => item !== answer).slice(0, 2), "Another meaning"], [choices, answer]);
-  const flip = (index: number) => {
-    const next = open.includes(index) ? open : [...open, index].slice(-2);
-    setOpen(next);
-    if (next.includes(0) && next.includes(1)) onChoose(answer);
-    else if (next.length === 2) window.setTimeout(() => { setOpen([]); if (!disabled) onChoose("not-a-match"); }, 450);
+      if (cardA.conceptId === cardB.conceptId) {
+        playSound("success");
+        const nextMatched = [...matchedIds, cardA.conceptId];
+        setMatchedIds(nextMatched);
+        setFlippedUids([]);
+        if (nextMatched.length === cards.length / 2) {
+          window.setTimeout(() => onCompleteRound(25), 500);
+        }
+      } else {
+        playSound("miss");
+        onMistake();
+        window.setTimeout(() => setFlippedUids([]), 700);
+      }
+    }
   };
-  return <div className="memory-list" role="list" aria-label="Ordered memory cards">{cards.map((card, index) => <button role="listitem" disabled={disabled} onClick={() => flip(index)} key={`${card}-${index}`} aria-pressed={open.includes(index)}><span>Card {index + 1}</span><strong>{open.includes(index) ? (index === 1 ? "Matching meaning" : <Word value={card} language={language} />) : "Face down"}</strong></button>)}</div>;
+
+  return (
+    <div className="memory-engine-container">
+      <p className="match-instruction">Find all 4 matching pairs of words and meanings:</p>
+      <div className="memory-grid">
+        {cards.map((card) => {
+          const isFlipped = flippedUids.includes(card.uid) || matchedIds.includes(card.conceptId);
+          return (
+            <button
+              key={card.uid}
+              className={`memory-tile ${isFlipped ? "flipped" : ""} ${matchedIds.includes(card.conceptId) ? "matched" : ""}`}
+              onClick={() => handleCardClick(card)}
+              disabled={matchedIds.includes(card.conceptId)}
+            >
+              {isFlipped ? (
+                card.isNative ? (
+                  <ScriptText language={languageId}>{card.text}</ScriptText>
+                ) : (
+                  <span>{card.text}</span>
+                )
+              ) : (
+                <span className="card-back-symbol">LUFO</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
-function Lanes({ choices, language, disabled, onChoose }: ChoiceProps) {
-  return <div className="lane-field"><div className="runner" aria-hidden="true">LUFO</div>{choices.map((choice, index) => <button className="lane" disabled={disabled} onClick={() => onChoose(choice)} key={choice}><span>Lane {index + 1}</span><Word value={choice} language={language} /><i aria-hidden="true" /></button>)}</div>;
-}
+// ----------------------------------------------------
+// 3. SENTENCE BUILDER ENGINE
+// ----------------------------------------------------
+function SentenceBuilderEngine({
+  languageId,
+  round,
+  onCompleteRound,
+}: {
+  languageId: LanguageId;
+  round: number;
+  onCompleteRound: (points: number, correct: boolean) => void;
+}) {
+  const sentences = [
+    { en: "Please give me water", target: "मला पाणी द्या", words: ["पाणी", "द्या", "मला"] },
+    { en: "This is my friend", target: "हा माझा मित्र आहे", words: ["मित्र", "हा", "आहे", "माझा"] },
+    { en: "Where is the market?", target: "बाजार कुठे आहे", words: ["कुठे", "बाजार", "आहे"] },
+    { en: "The food is very good", target: "जेवण खूप छान आहे", words: ["खूप", "आहे", "जेवण", "छान"] },
+    { en: "Hello, how are you?", target: "नमस्कार तुम्ही कसे आहात", words: ["कसे", "नमस्कार", "आहात", "तुम्ही"] },
+  ];
 
-function Rhythm({ answer, language, disabled, onChoose }: Omit<ChoiceProps, "choices"> & { answer: string }) {
-  const pieces = segmentGraphemes(answer, languages[language].locale).filter((part) => part.trim());
-  const [sequence, setSequence] = useState<string[]>([]);
-  const add = (piece: string) => setSequence((current) => [...current, piece]);
-  return <div className="rhythm-field"><div className="visual-beat" aria-label="Visual four-beat pattern"><i /><i /><i /><i /></div><p>Arrange the visible syllable or grapheme beats. This text alternative does not claim to assess hearing.</p><div className="built-sequence" aria-live="polite">{sequence.length ? sequence.join(" · ") : "Sequence is empty"}</div><div className="choice-row">{pieces.map((piece, index) => <button key={`${piece}-${index}`} onClick={() => add(piece)}><Word value={piece} language={language} /></button>)}</div><div className="row-actions"><button className="soft-button" onClick={() => setSequence([])}>Clear</button><button className="primary-button" disabled={disabled || sequence.length === 0} onClick={() => onChoose(sequence.join(""))}>Play visual sequence</button><button className="icon-button" aria-label="Optional sound unavailable for this authored item" title="No authored audio"><Volume2 /></button></div></div>;
-}
-
-function Raid({ choices, language, disabled, onChoose }: ChoiceProps) {
-  const [plan, setPlan] = useState<string[]>([]);
-  const moves = ["Enter", "Collect", "Return"];
-  return <div className="raid-field"><div className="raid-plan"><span>Home</span>{moves.map((move, index) => <button key={move} aria-pressed={plan.includes(move)} onClick={() => setPlan((current) => current.includes(move) ? current.filter((item) => item !== move) : [...current, move])}><b>{index + 1}</b>{move}</button>)}<span>Safe</span></div><p>Plan all three moves in any pace, then collect the matching word.</p><div className="choice-row">{choices.map((choice) => <button disabled={disabled || plan.length < 3} onClick={() => onChoose(choice)} key={choice}><Word value={choice} language={language} /></button>)}</div></div>;
-}
-
-function Builder({ answer, language, disabled, onChoose, round }: Omit<ChoiceProps, "choices"> & { answer: string; round: number }) {
-  const pieces = useMemo(() => segmentGraphemes(answer, languages[language].locale).filter((part) => part.trim()).sort((a, b) => (a.codePointAt(0)! + round) % 3 - (b.codePointAt(0)! + round) % 3), [answer, language, round]);
+  const current = sentences[round % sentences.length];
   const [built, setBuilt] = useState<string[]>([]);
-  return <div className="builder-field"><p>These are authored grapheme units, not naively split code points.</p><div className="build-slot" aria-live="polite"><ScriptText language={language}>{built.join("") || "Select pieces below"}</ScriptText></div><div className="grapheme-pieces">{pieces.map((piece, index) => <button key={`${piece}-${index}`} onClick={() => setBuilt((current) => [...current, piece])}><Word value={piece} language={language} /><span>Add piece {index + 1}</span></button>)}</div><div className="row-actions"><button className="soft-button" onClick={() => setBuilt((current) => current.slice(0, -1))}>Remove last</button><button className="soft-button" onClick={() => setBuilt([])}>Clear</button><button className="primary-button" disabled={disabled || !built.length} onClick={() => onChoose(built.join(""))}>Check build</button></div></div>;
+  const [isAnswered, setIsAnswered] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(false);
+
+  useEffect(() => {
+    setBuilt([]);
+    setIsAnswered(false);
+    setIsCorrect(false);
+  }, [round]);
+
+  const handleWordClick = (w: string) => {
+    if (isAnswered) return;
+    setBuilt((prev) => [...prev, w]);
+  };
+
+  const handleRemoveWord = (idx: number) => {
+    if (isAnswered) return;
+    setBuilt((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const check = () => {
+    const candidate = built.join(" ").trim();
+    const correct = candidate === current.target;
+    setIsCorrect(correct);
+    setIsAnswered(true);
+    playSound(correct ? "success" : "miss");
+    onCompleteRound(15, correct);
+  };
+
+  return (
+    <div className="builder-engine-container">
+      <div className="builder-prompt-card">
+        <span className="eyebrow">Translate this sentence</span>
+        <h2>“{current.en}”</h2>
+      </div>
+
+      <div className="assembled-box">
+        {built.length === 0 ? (
+          <span className="placeholder-text">Click words below to arrange your sentence</span>
+        ) : (
+          built.map((w, idx) => (
+            <button
+              key={`${w}-${idx}`}
+              className="built-chip"
+              onClick={() => handleRemoveWord(idx)}
+              disabled={isAnswered}
+            >
+              <ScriptText language={languageId}>{w}</ScriptText>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="source-chips">
+        {current.words.map((w, idx) => (
+          <button
+            key={`${w}-${idx}`}
+            className="source-chip"
+            onClick={() => handleWordClick(w)}
+            disabled={isAnswered}
+          >
+            <ScriptText language={languageId}>{w}</ScriptText>
+          </button>
+        ))}
+      </div>
+
+      <div className="builder-actions">
+        {!isAnswered ? (
+          <button
+            className="primary-button check-btn"
+            disabled={built.length === 0}
+            onClick={check}
+          >
+            Check Sentence
+          </button>
+        ) : (
+          <div className={`builder-feedback ${isCorrect ? "correct" : "incorrect"}`}>
+            <strong>{isCorrect ? "Excellent phrasing!" : `Correct: ${current.target}`}</strong>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function Boss({ choices, language, disabled, onChoose, round }: ChoiceProps & { round: number }) {
-  return <div className="boss-field"><div className="boss-figure" aria-label="Text description: a calm ink-cloud character with three learning shields"><span>ROUND {round + 1}</span><div className="boss-core"><Shield /><Shield /><Shield /></div><p>Vocabulary shield · Context shield · Recall shield</p></div><div className="boss-answers">{choices.map((choice, index) => <button disabled={disabled} onClick={() => onChoose(choice)} key={choice}><span>Strike {index + 1}</span><Word value={choice} language={language} /></button>)}</div></div>;
+// ----------------------------------------------------
+// 4. LISTENING CHALLENGE ENGINE
+// ----------------------------------------------------
+function ListeningChallengeEngine({
+  languageId,
+  round,
+  onCompleteRound,
+}: {
+  languageId: LanguageId;
+  round: number;
+  onCompleteRound: (points: number, correct: boolean) => void;
+}) {
+  const profile = languages[languageId];
+  const concept = concepts[round % concepts.length];
+  const choices = useMemo(() => {
+    const distractors = concepts.filter((c) => c.id !== concept.id).slice(0, 3);
+    return [concept, ...distractors].sort(() => 0.5 - Math.random());
+  }, [concept]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isAnswered, setIsAnswered] = useState(false);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setIsAnswered(false);
+    // Play sound initially
+    speakText(concept.values[languageId], profile.locale);
+  }, [round, concept, languageId, profile.locale]);
+
+  const handlePlayAudio = (slow = false) => {
+    speakText(concept.values[languageId], profile.locale, { rate: slow ? 0.6 : 0.85 });
+  };
+
+  const handleSelect = (id: string) => {
+    if (isAnswered) return;
+    setSelectedId(id);
+    setIsAnswered(true);
+    const correct = id === concept.id;
+    playSound(correct ? "success" : "miss");
+    onCompleteRound(15, correct);
+  };
+
+  return (
+    <div className="listening-engine-container">
+      <span className="eyebrow">Listening Comprehension</span>
+      <h2>What word do you hear?</h2>
+
+      <div className="listening-audio-controls">
+        <button className="primary-button audio-main-btn" onClick={() => handlePlayAudio(false)}>
+          <Volume2 size={32} />
+          <span>Play Voice</span>
+        </button>
+        <button className="soft-button audio-slow-btn" onClick={() => handlePlayAudio(true)}>
+          Play Slow
+        </button>
+      </div>
+
+      <div className="listening-choices-grid">
+        {choices.map((c) => {
+          const isSelected = selectedId === c.id;
+          let cls = "";
+          if (isAnswered) {
+            if (c.id === concept.id) cls = "correct";
+            else if (isSelected) cls = "incorrect";
+          }
+          return (
+            <button
+              key={c.id}
+              className={`choice-card ${cls}`}
+              disabled={isAnswered}
+              onClick={() => handleSelect(c.id)}
+            >
+              <span className="choice-text">
+                <ScriptText language={languageId}>{c.values[languageId]}</ScriptText>
+              </span>
+              {isAnswered && <small className="translit">{c.transliteration[languageId]}</small>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
-function ScreenHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return <header className="screen-heading"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></header>;
+// ----------------------------------------------------
+// 5. SPEED CHALLENGE ENGINE (Real 30s Countdown Timer)
+// ----------------------------------------------------
+function SpeedChallengeEngine({
+  languageId,
+  onFinish,
+}: {
+  languageId: LanguageId;
+  onFinish: (score: number, accuracy: number) => void;
+}) {
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [score, setScore] = useState(0);
+  const [answeredCount, setAnsweredCount] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  const currentConcept = concepts[currentIdx % concepts.length];
+  const choices = useMemo(() => {
+    const distractors = concepts.filter((c) => c.id !== currentConcept.id).slice(0, 3);
+    return [currentConcept, ...distractors].sort(() => 0.5 - Math.random());
+  }, [currentConcept]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          const acc = answeredCount > 0 ? correctCount / answeredCount : 1;
+          onFinish(score, acc);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [score, answeredCount, correctCount, onFinish]);
+
+  const handleAnswer = (choiceId: string) => {
+    setAnsweredCount((c) => c + 1);
+    if (choiceId === currentConcept.id) {
+      playSound("success");
+      setScore((s) => s + 10);
+      setCorrectCount((c) => c + 1);
+      setTimeLeft((t) => t + 2); // bonus time!
+    } else {
+      playSound("miss");
+    }
+    setCurrentIdx((i) => i + 1);
+  };
+
+  return (
+    <div className="speed-engine-container">
+      <div className="speed-timer-bar">
+        <Clock size={20} className="timer-icon" />
+        <span className={`timer-seconds ${timeLeft <= 5 ? "urgent" : ""}`}>{timeLeft}s</span>
+        <div className="timer-track">
+          <div className="timer-fill" style={{ width: `${(timeLeft / 30) * 100}%` }} />
+        </div>
+      </div>
+
+      <div className="speed-prompt-card">
+        <span className="eyebrow">Match English meaning</span>
+        <h2>“{currentConcept.values.en}”</h2>
+      </div>
+
+      <div className="speed-choices-grid">
+        {choices.map((c) => (
+          <button
+            key={c.id}
+            className="choice-card speed-btn"
+            onClick={() => handleAnswer(c.id)}
+          >
+            <ScriptText language={languageId}>{c.values[languageId]}</ScriptText>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
+// 6. QUIZ / PICTURE / DAILY CHALLENGE ENGINE
+// ----------------------------------------------------
+function QuizChallengeEngine({
+  gameId,
+  languageId,
+  round,
+  onCompleteRound,
+}: {
+  gameId: string;
+  languageId: LanguageId;
+  round: number;
+  onCompleteRound: (points: number, correct: boolean) => void;
+}) {
+  const concept = concepts[round % concepts.length];
+  const choices = useMemo(() => {
+    const distractors = concepts.filter((c) => c.id !== concept.id).slice(0, 3);
+    return [concept, ...distractors].sort(() => 0.5 - Math.random());
+  }, [concept]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isAnswered, setIsAnswered] = useState(false);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setIsAnswered(false);
+  }, [round]);
+
+  const handleSelect = (id: string) => {
+    if (isAnswered) return;
+    setSelectedId(id);
+    setIsAnswered(true);
+    const correct = id === concept.id;
+    playSound(correct ? "success" : "miss");
+    onCompleteRound(15, correct);
+  };
+
+  return (
+    <div className="quiz-engine-container">
+      <div className="quiz-prompt-header">
+        {gameId === "picture-vocabulary" && (
+          <span className="picture-glyph-big">{concept.emoji}</span>
+        )}
+        <span className="eyebrow">
+          {gameId === "picture-vocabulary" ? "Identify this object:" : "Choose the translation:"}
+        </span>
+        <h2>“{concept.values.en}”</h2>
+      </div>
+
+      <div className="choices-grid">
+        {choices.map((c) => {
+          const isSelected = selectedId === c.id;
+          let cls = "";
+          if (isAnswered) {
+            if (c.id === concept.id) cls = "correct";
+            else if (isSelected) cls = "incorrect";
+          }
+          return (
+            <button
+              key={c.id}
+              className={`choice-card ${cls}`}
+              disabled={isAnswered}
+              onClick={() => handleSelect(c.id)}
+            >
+              <span className="choice-text">
+                <ScriptText language={languageId}>{c.values[languageId]}</ScriptText>
+              </span>
+              <small className="translit">{c.transliteration[languageId]}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      {isAnswered && (
+        <div className="quiz-explanation-box">
+          <p>{concept.usage}</p>
+        </div>
+      )}
+    </div>
+  );
 }

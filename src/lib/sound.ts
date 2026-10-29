@@ -18,6 +18,10 @@ export function setSoundPrefs(next: { quiet: boolean; volume: number; reducedMot
   }
 }
 
+export function getSoundPrefs() {
+  return { quiet, volume, reducedMotion };
+}
+
 export function unlockAudio() {
   if (typeof window === "undefined") return;
   const AC =

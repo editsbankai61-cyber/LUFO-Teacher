@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { setSoundPrefs } from "@/lib/sound";
 import type { FamiliarLanguageId, LanguageId } from "./content";
+import { getUserProgressServer, recordActivityServer } from "./learning-fn";
 
-type AccessPrefs = {
+export type AccessPrefs = {
   reducedMotion: boolean;
   reducedTransparency: boolean;
   highContrast: boolean;
@@ -17,18 +18,22 @@ type AccessPrefs = {
   lufoVisible: boolean;
 };
 
-type LanguageProgress = {
+export type LanguageProgress = {
   xp: number;
   completedLessons: string[];
   completedGames: string[];
+  completedStories: string[];
   storyPages: Record<string, number>;
   savedConcepts: string[];
   assistedAnswers: number;
   independentAnswers: number;
+  currentStreak: number;
+  longestStreak: number;
   lastActivity: string | null;
+  lastActivityDate: string | null;
 };
 
-type LearnerState = {
+export type LearnerState = {
   version: 2;
   onboarded: boolean;
   name: string;
@@ -50,11 +55,15 @@ const emptyProgress = (): LanguageProgress => ({
   xp: 0,
   completedLessons: [],
   completedGames: [],
+  completedStories: [],
   storyPages: {},
   savedConcepts: [],
   assistedAnswers: 0,
   independentAnswers: 0,
+  currentStreak: 0,
+  longestStreak: 0,
   lastActivity: null,
+  lastActivityDate: null,
 });
 
 const initialState: LearnerState = {
@@ -90,9 +99,24 @@ const initialState: LearnerState = {
 type StoreContextValue = {
   state: LearnerState;
   hydrated: boolean;
+  userId: string;
   update: (next: Partial<LearnerState> | ((value: LearnerState) => LearnerState)) => void;
   updateAccess: (next: Partial<AccessPrefs>) => void;
   updateProgress: (language: LanguageId, next: Partial<LanguageProgress> | ((value: LanguageProgress) => LanguageProgress)) => void;
+  recordActivity: (activity: {
+    languageId: LanguageId;
+    activityType: "lesson" | "game" | "story" | "script" | "quiz";
+    activityId: string;
+    score: number;
+    accuracy?: number;
+    completedLessonId?: string;
+    completedGameId?: string;
+    completedStoryId?: string;
+    storyPage?: { storyId: string; page: number };
+    savedConceptId?: string;
+    assistedCount?: number;
+    independentCount?: number;
+  }) => Promise<{ xpAwarded: number; totalXp: number; streak: number }>;
   saveConcept: (conceptId: string) => void;
   exportData: () => void;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -128,6 +152,7 @@ export function LearnerProvider({ children, userId }: { children: ReactNode; use
     setHydrated(false);
   }
 
+  // 1. Load from localStorage first (instant response)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey(userId));
@@ -139,15 +164,62 @@ export function LearnerProvider({ children, userId }: { children: ReactNode; use
     }
   }, [userId]);
 
+  // 2. Fetch server progress for signed-in user and synchronize
+  useEffect(() => {
+    if (!hydrated || userId === "guest") return;
+
+    let isMounted = true;
+    getUserProgressServer({ data: { languageId: state.target } })
+      .then((res) => {
+        if (!isMounted || !res?.success || !res.progress) return;
+        const srv = res.progress;
+        setState((current) => {
+          const existing = current.progress[current.target];
+          // Merge server progress with existing
+          const merged: LanguageProgress = {
+            ...existing,
+            xp: Math.max(existing.xp, srv.xp),
+            completedLessons: Array.from(new Set([...existing.completedLessons, ...srv.completedLessons])),
+            completedGames: Array.from(new Set([...existing.completedGames, ...srv.completedGames])),
+            completedStories: Array.from(new Set([...(existing.completedStories || []), ...(srv.completedStories || [])])),
+            storyPages: { ...existing.storyPages, ...srv.storyPages },
+            savedConcepts: Array.from(new Set([...existing.savedConcepts, ...srv.savedConcepts])),
+            assistedAnswers: Math.max(existing.assistedAnswers, srv.assistedAnswers),
+            independentAnswers: Math.max(existing.independentAnswers, srv.independentAnswers),
+            currentStreak: Math.max(existing.currentStreak || 0, srv.currentStreak || 0),
+            longestStreak: Math.max(existing.longestStreak || 0, srv.longestStreak || 0),
+            lastActivity: srv.lastActivityAt || existing.lastActivity,
+            lastActivityDate: srv.lastActivityDate || existing.lastActivityDate,
+          };
+          return {
+            ...current,
+            progress: {
+              ...current.progress,
+              [current.target]: merged,
+            },
+          };
+        });
+      })
+      .catch((err) => {
+        console.debug("[store] Server progress fetch skipped:", err?.message || err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrated, userId, state.target]);
+
+  // Save to localStorage whenever state changes
   useEffect(() => {
     if (!hydrated) return;
     try {
       localStorage.setItem(storageKey(userId), JSON.stringify(state));
     } catch {
-      // Storage failures are non-destructive; export remains available when the browser permits downloads.
+      // Local storage failure handled gracefully
     }
   }, [state, hydrated, userId]);
 
+  // Synchronize CSS custom properties and accessibility preferences
   useEffect(() => {
     setSoundPrefs({ quiet: state.access.quiet, volume: state.access.volume, reducedMotion: state.access.reducedMotion });
     const root = document.documentElement;
@@ -187,6 +259,145 @@ export function LearnerProvider({ children, userId }: { children: ReactNode; use
     });
   }, []);
 
+  // Record an educational activity (lessons, games, stories, scripts)
+  const recordActivity = useCallback<StoreContextValue["recordActivity"]>(
+    async (activity) => {
+      const clientDate = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local user timezone
+      const idempotencyKey = `${userId}_${activity.languageId}_${activity.activityId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      let earnedXp = Math.max(5, Math.round((activity.score || 10) * (activity.accuracy ?? 1)));
+
+      if (userId !== "guest") {
+        try {
+          const res = await recordActivityServer({
+            data: {
+              languageId: activity.languageId,
+              activityType: activity.activityType,
+              activityId: activity.activityId,
+              score: activity.score,
+              accuracy: activity.accuracy ?? 1.0,
+              idempotencyKey,
+              clientDate,
+              assistedCount: activity.assistedCount,
+              independentCount: activity.independentCount,
+              completedLessonId: activity.completedLessonId,
+              completedGameId: activity.completedGameId,
+              completedStoryId: activity.completedStoryId,
+              storyPage: activity.storyPage,
+              savedConceptId: activity.savedConceptId,
+            },
+          });
+
+          if (res?.success) {
+            earnedXp = res.xpAwarded;
+            const resTotalXp = res.totalXp ?? 0;
+            const resStreak = res.currentStreak ?? 1;
+            setState((current) => {
+              const p = current.progress[activity.languageId];
+              const completedLessons = activity.completedLessonId && !p.completedLessons.includes(activity.completedLessonId)
+                ? [...p.completedLessons, activity.completedLessonId]
+                : p.completedLessons;
+              const completedGames = activity.completedGameId && !p.completedGames.includes(activity.completedGameId)
+                ? [...p.completedGames, activity.completedGameId]
+                : p.completedGames;
+              const completedStories = activity.completedStoryId && !p.completedStories?.includes(activity.completedStoryId)
+                ? [...(p.completedStories || []), activity.completedStoryId]
+                : (p.completedStories || []);
+              const storyPages = activity.storyPage
+                ? { ...p.storyPages, [activity.storyPage.storyId]: Math.max(p.storyPages[activity.storyPage.storyId] || 0, activity.storyPage.page) }
+                : p.storyPages;
+              const savedConcepts = activity.savedConceptId && !p.savedConcepts.includes(activity.savedConceptId)
+                ? [...p.savedConcepts, activity.savedConceptId]
+                : p.savedConcepts;
+
+              return {
+                ...current,
+                progress: {
+                  ...current.progress,
+                  [activity.languageId]: {
+                    ...p,
+                    xp: resTotalXp,
+                    completedLessons,
+                    completedGames,
+                    completedStories,
+                    storyPages,
+                    savedConcepts,
+                    currentStreak: resStreak,
+                    longestStreak: Math.max(p.longestStreak || 0, res.longestStreak || resStreak),
+                    lastActivity: new Date().toISOString(),
+                    lastActivityDate: clientDate,
+                    assistedAnswers: p.assistedAnswers + (activity.assistedCount || 0),
+                    independentAnswers: p.independentAnswers + (activity.independentCount || 0),
+                  },
+                },
+              };
+            });
+
+            return {
+              xpAwarded: res.xpAwarded,
+              totalXp: resTotalXp,
+              streak: resStreak,
+            };
+          }
+        } catch (err) {
+          console.debug("[store] Fallback to optimistic local progress update:", err);
+        }
+      }
+
+      // Guest / Offline fallback update
+      let updatedTotalXp = 0;
+      let calculatedStreak = 1;
+      setState((current) => {
+        const p = current.progress[activity.languageId];
+        updatedTotalXp = p.xp + earnedXp;
+        calculatedStreak = (p.currentStreak || 0) + 1;
+        const completedLessons = activity.completedLessonId && !p.completedLessons.includes(activity.completedLessonId)
+          ? [...p.completedLessons, activity.completedLessonId]
+          : p.completedLessons;
+        const completedGames = activity.completedGameId && !p.completedGames.includes(activity.completedGameId)
+          ? [...p.completedGames, activity.completedGameId]
+          : p.completedGames;
+        const completedStories = activity.completedStoryId && !p.completedStories?.includes(activity.completedStoryId)
+          ? [...(p.completedStories || []), activity.completedStoryId]
+          : (p.completedStories || []);
+        const storyPages = activity.storyPage
+          ? { ...p.storyPages, [activity.storyPage.storyId]: Math.max(p.storyPages[activity.storyPage.storyId] || 0, activity.storyPage.page) }
+          : p.storyPages;
+        const savedConcepts = activity.savedConceptId && !p.savedConcepts.includes(activity.savedConceptId)
+          ? [...p.savedConcepts, activity.savedConceptId]
+          : p.savedConcepts;
+
+        return {
+          ...current,
+          progress: {
+            ...current.progress,
+            [activity.languageId]: {
+              ...p,
+              xp: updatedTotalXp,
+              completedLessons,
+              completedGames,
+              completedStories,
+              storyPages,
+              savedConcepts,
+              currentStreak: calculatedStreak,
+              longestStreak: Math.max(p.longestStreak || 0, calculatedStreak),
+              lastActivity: new Date().toISOString(),
+              lastActivityDate: clientDate,
+              assistedAnswers: p.assistedAnswers + (activity.assistedCount || 0),
+              independentAnswers: p.independentAnswers + (activity.independentCount || 0),
+            },
+          },
+        };
+      });
+
+      return {
+        xpAwarded: earnedXp,
+        totalXp: updatedTotalXp,
+        streak: calculatedStreak,
+      };
+    },
+    [userId],
+  );
+
   const saveConcept = useCallback((conceptId: string) => {
     updateProgress(state.target, (progress) => ({
       ...progress,
@@ -219,7 +430,23 @@ export function LearnerProvider({ children, userId }: { children: ReactNode; use
     setState(initialState);
   }, [userId]);
 
-  const value = useMemo(() => ({ state, hydrated, update, updateAccess, updateProgress, saveConcept, exportData, importData, deleteData }), [state, hydrated, update, updateAccess, updateProgress, saveConcept, exportData, importData, deleteData]);
+  const value = useMemo(
+    () => ({
+      state,
+      hydrated,
+      userId,
+      update,
+      updateAccess,
+      updateProgress,
+      recordActivity,
+      saveConcept,
+      exportData,
+      importData,
+      deleteData,
+    }),
+    [state, hydrated, userId, update, updateAccess, updateProgress, recordActivity, saveConcept, exportData, importData, deleteData],
+  );
+
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
