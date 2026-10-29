@@ -138,15 +138,22 @@ export function GamesHub() {
               className={`game-card glass-card ${isCompleted ? "game-cleared" : ""}`}
               key={game.id}
             >
-              <div className="game-art-badge">
-                <span className="game-icon-glyph">{game.icon}</span>
-                {isCompleted && <CheckCircle2 size={18} className="game-cleared-icon" />}
+              <div className="game-card-header">
+                <div className="game-art-badge">
+                  <span className="game-icon-glyph">{game.icon}</span>
+                  {isCompleted && <CheckCircle2 size={16} className="game-cleared-icon" />}
+                </div>
+                <span className="eyebrow">{game.category}</span>
               </div>
               <div className="game-copy">
-                <span className="eyebrow">{game.category}</span>
                 <h2>{game.name}</h2>
                 <p>{game.description}</p>
-                <span className="access-note">Instructions: {game.instructions}</span>
+                <span className="access-note">💡 {game.instructions}</span>
+              </div>
+              <div className="game-card-cta">
+                <span className="game-cta-pill">
+                  {isCompleted ? "Play Again" : "Play Game"} <ArrowRight size={15} />
+                </span>
               </div>
             </Link>
           );
@@ -157,7 +164,7 @@ export function GamesHub() {
 }
 
 export function GamePlayer({ gameId }: { gameId: string }) {
-  const definition = gameModes.find((item) => item.id === gameId) ?? gameModes[0];
+  const definition = gameModes.find((item) => item.id === gameId);
   const { state, recordActivity } = useLearner();
   const profile = languages[state.target];
 
@@ -168,6 +175,25 @@ export function GamePlayer({ gameId }: { gameId: string }) {
   const [hearts, setHearts] = useState(3);
   const [gameOver, setGameOver] = useState(false);
   const [earnedXp, setEarnedXp] = useState(0);
+
+  if (!definition) {
+    return (
+      <div className="narrow-screen">
+        <section className="glass-card empty-state" style={{ padding: "48px 24px", textAlign: "center" }}>
+          <span style={{ fontSize: "3rem", display: "block", marginBottom: "12px" }}>🎮</span>
+          <h1 style={{ fontSize: "2rem", marginBottom: "8px" }}>Game Not Found</h1>
+          <p style={{ color: "var(--muted)", maxWidth: "460px", margin: "0 auto 24px" }}>
+            The game mode “{gameId}” could not be found. Choose from our 8 educational games below.
+          </p>
+          <div className="row-actions" style={{ justifyContent: "center" }}>
+            <Link className="primary-button" href="/app/games">
+              <ChevronLeft size={16} /> Return to Game Catalogue
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const startGame = () => {
     setStarted(true);

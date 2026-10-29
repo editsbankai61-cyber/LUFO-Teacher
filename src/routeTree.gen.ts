@@ -16,6 +16,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppSectionRouteImport } from './routes/app/$section'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppSectionIndexRouteImport } from './routes/app/$section/index'
 import { Route as AppSectionDetailRouteImport } from './routes/app/$section/$detail'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppSectionIndexRoute = AppSectionIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSectionRoute,
+} as any)
 const AppSectionDetailRoute = AppSectionDetailRouteImport.update({
   id: '/$detail',
   path: '/$detail',
@@ -68,15 +74,16 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$section/$detail': typeof AppSectionDetailRoute
+  '/app/$section/': typeof AppSectionIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
-  '/app/$section': typeof AppSectionRouteWithChildren
   '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$section/$detail': typeof AppSectionDetailRoute
+  '/app/$section': typeof AppSectionIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,6 +95,7 @@ export interface FileRoutesById {
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/app/$section/$detail': typeof AppSectionDetailRoute
+  '/app/$section/': typeof AppSectionIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,15 +108,16 @@ export interface FileRouteTypes {
     | '/app/'
     | '/api/auth/$'
     | '/app/$section/$detail'
+    | '/app/$section/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/register'
-    | '/app/$section'
     | '/app'
     | '/api/auth/$'
     | '/app/$section/$detail'
+    | '/app/$section'
   id:
     | '__root__'
     | '/'
@@ -119,6 +128,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/api/auth/$'
     | '/app/$section/$detail'
+    | '/app/$section/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -180,6 +190,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/$section/': {
+      id: '/app/$section/'
+      path: '/'
+      fullPath: '/app/$section/'
+      preLoaderRoute: typeof AppSectionIndexRouteImport
+      parentRoute: typeof AppSectionRoute
+    }
     '/app/$section/$detail': {
       id: '/app/$section/$detail'
       path: '/$detail'
@@ -192,10 +209,12 @@ declare module '@tanstack/react-router' {
 
 interface AppSectionRouteChildren {
   AppSectionDetailRoute: typeof AppSectionDetailRoute
+  AppSectionIndexRoute: typeof AppSectionIndexRoute
 }
 
 const AppSectionRouteChildren: AppSectionRouteChildren = {
   AppSectionDetailRoute: AppSectionDetailRoute,
+  AppSectionIndexRoute: AppSectionIndexRoute,
 }
 
 const AppSectionRouteWithChildren = AppSectionRoute._addFileChildren(

@@ -1,9 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ProductRouter } from "@/components/Screens";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app/$section")({
-  component: function SectionPage() {
-    const { section } = Route.useParams();
-    return <ProductRouter slug={[section]} />;
+  component: function SectionLayout() {
+    return <Outlet />;
   },
 });

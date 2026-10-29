@@ -46,6 +46,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname]);
+
   const switchLanguage = (id: LanguageId) => {
     if (id === state.target) return;
     playSound("whoosh");
@@ -87,7 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="nav-label">Explore</p>
           {mainNav.map((item) => <NavLink key={item.href} {...item} active={pathname === item.href || pathname.startsWith(`${item.href}/`)} onNavigate={() => setMenu(false)} />)}
           <p className="nav-label">Your space</p>
-          {moreNav.map((item) => <NavLink key={item.href} {...item} active={pathname === item.href} onNavigate={() => setMenu(false)} />)}
+          {moreNav.map((item) => <NavLink key={item.href} {...item} active={pathname === item.href || pathname.startsWith(`${item.href}/`)} onNavigate={() => setMenu(false)} />)}
         </nav>
         <div className="sidebar-progress">
           <div className="xp-ring"><span>{state.progress[state.target].xp}</span><small>XP</small></div>

@@ -1,4 +1,4 @@
-import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Outlet, Scripts, ScrollRestoration } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { LearnerBridge } from "@/components/learner-bridge";
@@ -45,6 +45,7 @@ function Root() {
             <Outlet />
           </LearnerBridge>
         </AuthProvider>
+        <ScrollRestoration />
         <Scripts />
       </body>
     </html>
