@@ -13,15 +13,32 @@
  * the same files at startup instead (see src/lib/db.ts).
  */
 import { readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
-import { pendingMigrations } from "./migration-plan.mjs";
+import { isMigrationFile, pendingMigrations } from "./migration-plan.mjs";
+import {
+  getSanitizedHost,
+  isProductionEnvironment,
+  normalizeDatabaseUrl,
+  validateDatabaseUrl,
+} from "./database-url.mjs";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
+const rawDatabaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl);
+const validation = validateDatabaseUrl(databaseUrl);
+
+if (!validation.valid || !databaseUrl) {
+  if (isProductionEnvironment()) {
+    console.error(
+      `[migrate] Production database configuration error: ${validation.error || "DATABASE_URL is missing"}. ` +
+        "Ensure DATABASE_URL or POSTGRES_URL is configured with a valid connection string in Vercel environment variables.",
+    );
+    process.exit(1);
+  }
   console.log(
-    "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
+    `[migrate] DATABASE_URL not set (${validation.error}) — skipping (the PGLite fallback migrates itself in local dev).`,
   );
   process.exit(0);
 }
@@ -29,20 +46,41 @@ if (!databaseUrl) {
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
 async function main() {
-  let entries;
+  let topEntries = [];
   try {
-    entries = await readdir(migrationsDir);
+    topEntries = await readdir(migrationsDir);
   } catch {
     console.log("[migrate] no migrations/ directory — nothing to do.");
     return;
   }
-  // An app with no schema of its own must not pay for a database connection.
-  if (pendingMigrations(entries, []).length === 0) {
-    console.log("[migrate] no migrations — nothing to do.");
+
+  let authEntries = [];
+  try {
+    authEntries = await readdir(join(migrationsDir, "auth"));
+  } catch {
+    // No migrations/auth/ directory
+  }
+
+  const topFiles = topEntries.filter(isMigrationFile);
+  const authFiles = authEntries.filter(isMigrationFile);
+  const candidateNames = Array.from(new Set([...topFiles, ...authFiles]));
+
+  if (candidateNames.length === 0) {
+    console.log("[migrate] no migrations found — nothing to do.");
     return;
   }
 
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
+  const sanitizedHost = getSanitizedHost(databaseUrl);
+  console.log(`[migrate] Connecting to PostgreSQL at ${sanitizedHost}...`);
+
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    max: 1,
+    ssl:
+      databaseUrl.includes("sslmode=require") || databaseUrl.includes("neon.tech")
+        ? { rejectUnauthorized: false }
+        : undefined,
+  });
   const client = await pool.connect();
   try {
     await client.query(
@@ -52,9 +90,18 @@ async function main() {
       (r) => r.name,
     );
 
+    const pending = pendingMigrations(candidateNames, applied);
+    if (pending.length === 0) {
+      console.log("[migrate] database schema is already up to date.");
+      return;
+    }
+
     let count = 0;
-    for (const { name } of pendingMigrations(entries, applied)) {
-      const text = await readFile(join(migrationsDir, name), "utf8");
+    for (const { name } of pending) {
+      const topPath = join(migrationsDir, name);
+      const authPath = join(migrationsDir, "auth", name);
+      const filePath = existsSync(topPath) ? topPath : authPath;
+      const text = await readFile(filePath, "utf8");
       try {
         await client.query("BEGIN");
         // pg's simple-query protocol runs a whole multi-statement file at once.

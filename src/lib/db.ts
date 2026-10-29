@@ -1,22 +1,38 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import {
+  getSanitizedHost,
+  isProductionEnvironment,
+  normalizeDatabaseUrl,
+  validateDatabaseUrl,
+} from "../../scripts/database-url.mjs";
+
+/** Whether running in production (Vercel or standard production Node.js). */
+export const isProduction = isProductionEnvironment();
+
+// An empty/whitespace/malformed DATABASE_URL must not trigger PGlite in production.
+// Also check POSTGRES_URL (commonly injected by Neon's Vercel integration).
+const rawDatabaseUrl =
+  typeof process !== "undefined"
+    ? process.env.DATABASE_URL || process.env.POSTGRES_URL
+    : undefined;
+
+export const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl);
+export const dbValidation = validateDatabaseUrl(databaseUrl);
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
 
-// An empty/whitespace DATABASE_URL (an easy misconfig in deploy UIs) must mean
-// "unset" — otherwise production would silently run on the PGLite fallback.
-const rawDatabaseUrl =
-  typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
-const databaseUrl =
-  rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
-
 /**
- * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured
- * sandbox), otherwise a local embedded **PGLite** (Postgres compiled to WASM) so
- * the app has a working database even with nothing configured — the live preview
- * included. Swap in Neon later by just setting `DATABASE_URL`; no code changes.
+ * Active backend:
+ * - Real Neon/PostgreSQL when DATABASE_URL is set and valid.
+ * - In production: strictly "neon" (fails closed with a sanitized error if missing/invalid; never PGlite).
+ * - In local development / preview: falls back to local embedded PGLite.
  */
-export const dbSource: DbSource = databaseUrl ? "neon" : "pglite";
+export const dbSource: DbSource = dbValidation.valid
+  ? "neon"
+  : isProduction
+    ? "neon"
+    : "pglite";
 
 /**
  * Minimal shared SQL surface, satisfied by both Neon and PGLite. Both the
@@ -86,6 +102,13 @@ function toSql(run: Run): Sql {
 }
 
 function createNeonSql(): Promise<Sql> {
+  if (!dbValidation.valid || !databaseUrl) {
+    throw new Error(
+      `[db] Production database failure: ${dbValidation.error || "DATABASE_URL is missing"}. ` +
+        "Ensure DATABASE_URL or POSTGRES_URL is configured in Vercel environment variables.",
+    );
+  }
+
   globalRef.__pgSqlPromise__ ??= (async () => {
     // Regular Postgres driver: node-postgres (`pg`) — works directly with Neon's
     // pooled endpoint. One pool per process; warm serverless instances reuse it.
@@ -93,7 +116,13 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
-    const pool = new Pool({ connectionString: databaseUrl });
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      ssl:
+        databaseUrl.includes("sslmode=require") || databaseUrl.includes("neon.tech")
+          ? { rejectUnauthorized: false }
+          : undefined,
+    });
     return toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];
@@ -106,6 +135,13 @@ function createNeonSql(): Promise<Sql> {
 }
 
 async function createPgliteSql(): Promise<Sql> {
+  if (isProduction) {
+    throw new Error(
+      `[db] Production database failure: PGlite is strictly forbidden in production. ${dbValidation.error}. ` +
+        "Configure a valid DATABASE_URL in Vercel environment variables.",
+    );
+  }
+
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
   // One in-memory instance per process, shared across HMR module instances, so
   // data survives source edits (it resets on dev-server restart).
@@ -195,11 +231,14 @@ export function getSql(): Promise<Sql> {
 }
 
 /**
- * The shared PGLite instance (preview only), with `migrations/*.sql` applied.
+ * The shared PGLite instance (preview/dev only), with `migrations/*.sql` applied.
  * Lets Better Auth persist to the SAME embedded DB as app data in preview (via a
- * Kysely dialect). Throws when `DATABASE_URL` is set (that path uses Neon).
+ * Kysely dialect). Throws in production or when `DATABASE_URL` is set (that path uses Neon).
  */
 export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite> {
+  if (isProduction) {
+    throw new Error("[db] PGlite is strictly forbidden in production");
+  }
   if (dbSource !== "pglite") {
     throw new Error("getPglite() is only available on the PGLite fallback (no DATABASE_URL)");
   }
@@ -212,24 +251,35 @@ export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite
 /**
  * Finish DB bootstrap before the server handles traffic.
  *
- * - **PGLite** (preview / no `DATABASE_URL`): open the in-memory DB and apply
+ * - **PGLite** (preview / dev only / no `DATABASE_URL`): open the in-memory DB and apply
  *   `migrations/*.sql`. Idempotent — concurrent callers share one promise.
- * - **Neon**: no-op (pool is created lazily on first query).
- *
- * Vite `configureServer` awaits this at dev startup; production imports of this
- * module kick it off immediately (see bottom of file).
+ * - **Production**: validates that Neon connection configuration is present and valid.
+ *   Fails fast with a sanitized error if misconfigured.
+ * - **Neon** (dev with DATABASE_URL): no-op (pool is created lazily on first query).
  */
 export function ensureDbReady(): Promise<void> {
+  if (isProduction) {
+    if (!dbValidation.valid) {
+      const sanitizedHost = getSanitizedHost(databaseUrl);
+      const err = new Error(
+        `[db] Production database failure: ${dbValidation.error}. Host: '${sanitizedHost}'. ` +
+          "Configure a valid DATABASE_URL or POSTGRES_URL in Vercel environment variables.",
+      );
+      console.error(err.message);
+      return Promise.reject(err);
+    }
+    return Promise.resolve();
+  }
   if (dbSource !== "pglite") return Promise.resolve();
   return getSql().then(() => undefined);
 }
 
 // Server-only eager start: kick PGLite bootstrap as soon as this module loads in
-// Node. Client bundles never hit this path (`getSql` throws in the browser).
+// Node in development/preview. In production or browser, this is strictly skipped.
 const globalBoot = globalThis as typeof globalThis & {
   __pgBootstrapPromise__?: Promise<void>;
 };
-if (typeof window === "undefined" && dbSource === "pglite") {
+if (typeof window === "undefined" && !isProduction && dbSource === "pglite") {
   globalBoot.__pgBootstrapPromise__ ??= ensureDbReady().catch((err) => {
     globalBoot.__pgBootstrapPromise__ = undefined;
     console.error("[db] PGLite bootstrap failed:", err);
