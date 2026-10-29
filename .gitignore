@@ -1,0 +1,39 @@
+﻿# Dependencies
+node_modules/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Build output and caches
+dist/
+.vercel/
+.gradle/
+.cache/
+.turbo/
+
+# Local project configuration
+.grok/
+
+# Android generated files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+package.json.broken.bak
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/

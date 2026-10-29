@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+.vercel
+.output
+.grok
+package-lock.json
+package.json.broken.bak
+src/routeTree.gen.ts
+public
+android

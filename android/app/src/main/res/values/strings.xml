@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LUFO Teacher</string>
+    <string name="title_activity_main">LUFO Teacher</string>
+    <string name="package_name">app.lufo.teacher</string>
+    <string name="custom_url_scheme">app.lufo.teacher</string>
+</resources>
