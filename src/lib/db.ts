@@ -1,8 +1,8 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 import {
+  findDatabaseUrlFromEnv,
   getSanitizedHost,
   isProductionEnvironment,
-  normalizeDatabaseUrl,
   validateDatabaseUrl,
 } from "../../scripts/database-url.mjs";
 
@@ -10,14 +10,15 @@ import {
 export const isProduction = isProductionEnvironment();
 
 // An empty/whitespace/malformed DATABASE_URL must not trigger PGlite in production.
-// Also check POSTGRES_URL (commonly injected by Neon's Vercel integration).
-const rawDatabaseUrl =
+// Also check POSTGRES_URL and other Vercel/Neon keys (POSTGRES_PRISMA_URL, etc.).
+const envLookup =
   typeof process !== "undefined"
-    ? process.env.DATABASE_URL || process.env.POSTGRES_URL
-    : undefined;
+    ? findDatabaseUrlFromEnv(process.env)
+    : { key: undefined, url: undefined, raw: undefined };
 
-export const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl);
+export const databaseUrl = envLookup.url;
 export const dbValidation = validateDatabaseUrl(databaseUrl);
+export const databaseEnvKey = envLookup.key;
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";

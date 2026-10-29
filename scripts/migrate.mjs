@@ -19,26 +19,29 @@ import { dirname, join } from "node:path";
 import pg from "pg";
 import { isMigrationFile, pendingMigrations } from "./migration-plan.mjs";
 import {
+  describeDatabaseEnvKeys,
+  findDatabaseUrlFromEnv,
   getSanitizedHost,
   isProductionEnvironment,
-  normalizeDatabaseUrl,
   validateDatabaseUrl,
 } from "./database-url.mjs";
 
-const rawDatabaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-const databaseUrl = normalizeDatabaseUrl(rawDatabaseUrl);
+const { key: detectedKey, url: databaseUrl } = findDatabaseUrlFromEnv(process.env);
 const validation = validateDatabaseUrl(databaseUrl);
 
 if (!validation.valid || !databaseUrl) {
+  const envDescription = describeDatabaseEnvKeys(process.env);
   if (isProductionEnvironment()) {
     console.error(
-      `[migrate] Production database configuration error: ${validation.error || "DATABASE_URL is missing"}. ` +
-        "Ensure DATABASE_URL or POSTGRES_URL is configured with a valid connection string in Vercel environment variables.",
+      `[migrate] Production database configuration error: ${validation.error || "DATABASE_URL is missing"}.\n` +
+        `[migrate] Checked environment keys: [${envDescription}].\n` +
+        "[migrate] Ensure DATABASE_URL or POSTGRES_URL is configured with a valid connection string in Vercel environment variables.",
     );
     process.exit(1);
   }
   console.log(
-    `[migrate] DATABASE_URL not set (${validation.error}) — skipping (the PGLite fallback migrates itself in local dev).`,
+    `[migrate] Database URL not configured or invalid (${validation.error}) — skipping deploy migration.\n` +
+      `[migrate] Checked environment keys: [${envDescription}]. (PGLite fallback migrates itself in local dev/preview).`,
   );
   process.exit(0);
 }
@@ -71,7 +74,7 @@ async function main() {
   }
 
   const sanitizedHost = getSanitizedHost(databaseUrl);
-  console.log(`[migrate] Connecting to PostgreSQL at ${sanitizedHost}...`);
+  console.log(`[migrate] Connecting to PostgreSQL at ${sanitizedHost} (via ${detectedKey || "DATABASE_URL"})...`);
 
   const pool = new pg.Pool({
     connectionString: databaseUrl,
